@@ -1,4 +1,4 @@
-# XIAO ESP32-S3 8 MB flash — no OTA, maximise LittleFS
+# XIAO ESP32-S3 8 MB flash. no OTA to maximize LittleFS
 # Name,   Type, SubType,  Offset,   Size
 nvs,      data, nvs,      0x9000,   0x5000
 app0,     app,  factory,  0x10000,  0x300000
