@@ -7,59 +7,60 @@
 #include "shorthand.h"
 
 struct GpsFix {
-    bool valid = false; // position is valid AND not stale
-    double latitude = 0.0;   // degrees
-    double longitude = 0.0;   // degrees
-    double altitudeM = 0.0;   // meters above sea level
-    u8 satellites = 0;          // satellites in use
+    bool   valid      = false;  // position is valid and not stale
+    double latitude   = 0.0;   // degrees
+    double longitude  = 0.0;   // degrees
+    double altitudeM  = 0.0;   // meters above sea level
+    u8     satellites = 0;     // satellites in use
 };
 
 class GPS {
 public:
     GPS();
-    WMM_Tinier _wmm;
 
     void begin();
     void update();
 
-    bool hasFix() const;  // valid, non-stale position fix
-    double latitude() const;  // degrees
-    double longitude() const;  // degrees
-    double altitudeMeters() const;  // meters
+    // UBX-CFG-RXM: Power Save Mode (about 11 mA cyclic 1 Hz). Module stays
+    // UART-responsive; no reinit needed after waking.
+    void sleep();
 
-    bool dateTimeValid() const;
-    u16 year() const;
-    u8 month() const;
-    u8 day() const;
-    u8 hour() const; // UTC
-    u8 minute() const; // UTC
-    u8 second() const; // UTC
+    bool declinationValid() const;    // true once a WMM value has been computed
+    double declinationDegrees() const; // computed value, or config fallback
+    Quaternion declinationQuat() const; // yaw(-decl): left-multiply to get true-north orientation
 
-    bool declinationValid() const;  // true if a real WMM value is cached
-    double declinationDegrees() const;  // cached value, else config fallback
+    u32  charsProcessed() const; // total chars from module; 0 = not wired
+    bool isTalking() const;      // chars arrived within TALKING_TIMEOUT_MS
 
-    // Magnetic -> true correction as a world-up yaw quaternion, i.e. yaw(-decl).
-    // Left-multiply the device's body->world (magnetic) orientation by this to
-    // re-reference it to TRUE north:  qTrue = declinationQuat() * qDevice.
-    Quaternion declinationQuat() const;
-
-    u8 satellites() const;
-    u32 charsProcessed() const; // >0 means the module is wired & talking
-
-    // everything
     GpsFix read() const;
 
 private:
     HardwareSerial _serial;
     mutable TinyGPSPlus _gps;
+    WMM_Tinier _wmm;
 
-    void _recomputeDeclination();   // gated; called from update()
-    double _decimalYear() const;    // GPS date -> fractional year for WMM
+    bool   hasFix() const;
+    double latitude() const;
+    double longitude() const;
+    double altitudeMeters() const;
+
+    bool dateTimeValid() const;
+    u16  year() const;
+    u8   month() const;
+    u8   day() const;
+    u8   hour() const;
+    u8   minute() const;
+    u8   second() const;
+
+    u8  satellites() const;
+
+    void _recomputeDeclination();
 
     double _declinationDeg = GpsConfig::DEFAULT_DECLINATION_DEG;
-
     bool _declinationValid = false;
-    double _lastCalcLat = 0.0;      // position of last computation
+    double _lastCalcLat = 0.0;
     double _lastCalcLng = 0.0;
-    u32 _lastCalcMs = 0;       // millis() of last computation
+    u32 _lastCalcMs = 0;
+
+    u32 _lastCharMs = 0;  // millis() of last received byte; 0 = never
 };
