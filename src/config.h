@@ -41,7 +41,12 @@ namespace BatteryConfig {
     // ModelGauge compensation byte (0x00-0xFF). Default 0x97.
     // Increase to shift SOC readings higher; decrease to shift lower.
     // Tune by comparing rested open-circuit voltage to a LiPo SOC table.
-    constexpr u8 RCOMP = 0xB0;
+    constexpr u8  RCOMP  = 0xB0;
+
+    // Full-charge voltage for this cell (V). When voltage >= V_FULL while
+    // charging, the gauge is seeded with 100% so the ModelGauge algorithm
+    // tracks from the correct endpoint instead of a 4.20V-based ceiling.
+    constexpr f32 V_FULL = 4.10f;
 
     // Voltage-trend window for charging detection. If the cell voltage has risen
     // at least CHARGE_VTREND_V over the last CHARGE_VTREND_SAMPLES polls, the
@@ -54,6 +59,15 @@ namespace BatteryConfig {
     // ADC noise (about 0.05 mV on the half-mean) while the expected signal at 20 mA net
     // charge is about 0.35 mV and a full slope reversal produces about 0.75 mV.
     constexpr f32 CHARGE_VTREND_V = 0.0003f;
+
+    // Battery dead state thresholds. No hardware kill switch exists for the
+    // display backlight or I2C ICs, so at V_DEAD we do a software shutdown:
+    // display SLPIN, BNO055 suspend, GPS power-save. Polls slowly until the
+    // cell climbs back to V_RECOVER (hysteresis prevents thrashing), then
+    // restarts the firmware for a clean re-init.
+    constexpr f32 V_DEAD       = 3.40f;  // enter dead state below this (V)
+    constexpr f32 V_RECOVER    = 3.55f;  // exit dead state above this (V)
+    constexpr u32 DEAD_POLL_MS = 10000;  // voltage check interval while dead (ms)
 }
 
 // Cross-cutting tunables

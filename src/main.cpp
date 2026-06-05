@@ -51,6 +51,7 @@ Button button(PIN_BUTTON, INPUT, HIGH); // pulled down -> active HIGH
 
 // -- App state --
 bool g_poweredOff = false;
+bool g_batteryDead = false;
 AppState app;
 
 // -- NVS persistence (survives power loss, not just deep sleep) --
@@ -257,6 +258,27 @@ void loop() {
         return; // still held (or bounced) - keep looping until pin is stable low
     }
 
+    if (g_batteryDead) {
+        // Peripherals are already off. Poll the gauge slowly; restart when safe.
+        // delay(100) between ticks keeps the CPU mostly idle without light sleep
+        // (which hangs on this S3 with LittleFS mounted - same issue as power-off).
+        static u32 lastDeadPoll = 0;
+        const u32 t = millis();
+        if (g_haveBattery && t - lastDeadPoll >= BatteryConfig::DEAD_POLL_MS) {
+            lastDeadPoll = t;
+            battery.trackVoltage();
+            const float v = battery.voltage();
+            if (DebugConfig::BATTERY) Serial.printf("[batt] dead poll %.2fV\n", v);
+            if (v >= BatteryConfig::V_RECOVER) {
+                Serial.printf("[batt] voltage recovered (%.2fV) - restarting\n", v);
+                delay(50); // let serial flush before the restart
+                ESP.restart();
+            }
+        }
+        delay(100);
+        return;
+    }
+
     gps.update();
 
     const u32 now = millis();
@@ -282,6 +304,29 @@ void loop() {
                 chargeDebounce = max((i8)(chargeDebounce - 1), (i8)-CHARGE_THRESH);
             if      (chargeDebounce >= CHARGE_THRESH)  g_charging = true;
             else if (chargeDebounce <= -CHARGE_THRESH) g_charging = false;
+
+            // Seed gauge to 100% the first time voltage hits the full-charge
+            // threshold while charging. Corrects the ModelGauge default 4.20V
+            // ceiling to match this cell's actual 4.10V full-charge voltage.
+            static bool socSeeded = false;
+            if (!socSeeded && g_charging && g_battVoltage >= BatteryConfig::V_FULL) {
+                battery.writeSoc(100.0f);
+                socSeeded = true;
+                if (DebugConfig::BATTERY) Serial.println("[batt] seeded SOC=100% at V_FULL");
+            }
+
+            // dead battery: no hardware kill switch, so software-shutdown everything
+            if (!g_batteryDead && g_battVoltage > 0.0f && g_battVoltage < BatteryConfig::V_DEAD) {
+                g_batteryDead = true;
+                Serial.printf("[batt] dead (%.2fV < %.2fV) - shutting down\n",
+                              g_battVoltage, BatteryConfig::V_DEAD);
+                nvsSave();
+                nvsCalibSave();
+                nvsBattSave(g_battPct, g_charging);
+                display.sleep();
+                if (g_haveImu) bno.suspend();
+                gps.sleep();
+            }
         }
         if (DebugConfig::BATTERY) {
             if (g_haveBattery)
